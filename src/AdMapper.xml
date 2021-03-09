@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="AdministratorInterface">
+
+
+
+
+
+    <!--    <resultMap id="customerMap" type="com.southwind.entity.Customer">-->
+    <!--        <id column="cid" property="id"></id>-->
+    <!--        <result column="cname" property="name"></result>-->
+    <!--        <collection property="goods" ofType="com.southwind.entity.Goods">-->
+    <!--            <id column="gid" property="id"/>-->
+    <!--            <result column="gname" property="name"/>-->
+    <!--        </collection>-->
+    <!--    </resultMap>-->
+
+
+
+
+    <select id="checkAd" resultType="Administrator">
+        select user_id, user_name, user_password from administrator_table where user_name = #{param1} and user_password =
+                                                                                                 #{param2};
+    </select>
+
+
+    <select id="checkTrainId" resultType="String">
+        select train_name from train2 where train_name = #{param1};
+    </select>
+
+
+    <delete id="deleteTrain" >
+        delete from train2 where train_name = #{param1};
+    </delete>
+
+    <delete id="deleteLine" >
+        delete from info where train_num = #{param1};
+    </delete>
+
+    <delete id="deleteOrderD" >
+        delete from order_table where depart_stop_id in (
+            select stop_id from info where train_num = #{param1});
+    </delete>
+
+    <delete id="deleteOrderA" >
+        delete from order_table where arrive_stop_id in (
+            select stop_id from info where train_num = #{param1});
+    </delete>
+
+    <delete id="deleteRe" >
+        delete from remaining where remaining.stop_id in (
+            select info.stop_id from info where train_num = #{param1});
+    </delete>
+
+    <delete id="deleteReByID" >
+        delete from remaining where remaining.stop_id = #{param1} ;
+    </delete>
+
+    <delete id="deleteStop" >
+        delete from info where stop_num_in_line = #{param1}
+                               and train_num = #{param2};
+    </delete>
+
+
+
+    <select id="getStopId" resultType="Integer">
+        select stop_id from info where train_num = #{param1} and stop_num_in_line = #{param2};
+    </select>
+
+    <select id="checkStatId" resultType="String">
+        select station from sname_city where station = #{param1};
+    </select>
+
+    <delete id="deleteStation" >
+        delete from sname_city where station = #{param1};
+    </delete>
+
+    <delete id="deleteTrainSt" >
+        delete from train2 where departure in (select city from sname_city where station = #{param1})
+                              or   arrival in (select city from sname_city where station = #{param1});
+    </delete>
+
+    <select id="SelTrain" resultType="String">
+        select train_name from train2 where departure =  #{param1} or arrival =  #{param1};
+    </select>
+
+
+    <delete id="deleteLineSt" >
+        delete from info where station_name = #{param1};
+    </delete>
+
+
+    <insert id="InsertStat" >
+    insert into sname_city (station,city) VALUES (#{param1},#{param2});
+    </insert>
+
+    <insert id="InsertStop" >
+        insert into info (train_num, stop_num_in_line, station_name, arrive_time, depart_time, cost_days, miles)
+                  VALUES (#{param1},#{param2},         #{param3},#{param4}      ,#{param5},#{param6}     ,#{param7});
+    </insert>
+
+    <insert id="InsertTrain" >
+        insert into train2 (train_name, departure, arrival, depart_time, cost_days, miles,arrive_time)
+                    VALUES (#{param1},  #{param2}, #{param3},#{param4},  #{param6}, #{param7}, #{param5});
+    </insert>
+
+
+    <select id="getID" resultType="Integer">
+        select sid from sname_city where station = #{param1} and existence = 'Y';
+    </select>
+
+    <select id="selMaxID" resultType="Integer">
+        select max(info.stop_id) from info;
+    </select>
+
+
+    <insert id="InsertRem" >
+        insert into remaining (stop_id, ticket_rank1, ticket_rank2, ticket_rank3, gotime)
+                       VALUES (#{param1},600        , 800,        1000          , cast(#{param2} as date));
+    </insert>
+
+    <update id="UpdateStation" >
+        update sname_city set station = #{param1} where station = #{param2} ;
+    </update>
+
+    <select id="getStID" resultType="Integer">
+        select sid from sname_city where station = #{param1};
+    </select>
+
+    <select id="getNum" resultType="Integer">
+        select count(*) from info where train_num = #{param1};
+    </select>
+
+    <select id="getSts" resultType="String">
+        select station from sname_city join info on info.station_name = sname_city.sid
+        where train_num = #{param1}
+        order by
+            info.stop_num_in_line;
+    </select>
+
+
+    <select id="getMiles" resultType="Integer">
+        select miles from info where train_num = #{param1} and stop_num_in_line = #{param2};
+    </select>
+
+
+    <update id="UpdateInfoSt" >
+        update info set station_name =
+            (select sid from sname_city where station = #{param1})
+        where stop_id =
+            (select stop_id from info where train_num = #{param3}
+                and stop_num_in_line = 1) + #{param2}-1;
+    </update>
+
+    <update id="UpdateTrDe" >
+        update train2 set departure =
+            (select sid from sname_city where station = #{param2})
+        where train_name = #{param1};
+    </update>
+
+    <update id="UpdateTrAr" >
+        update train2 set arrival =
+                                  (select sid from sname_city where station = #{param2})
+        where train_name = #{param1};
+    </update>
+
+
+    <resultMap id="lineMap" type="Line">
+        <id property="stop_id" column="stop_id"></id>
+        <result property="train_num" column="train_num"></result>
+        <result property="depart_time" column="depart_time"></result>
+        <result property="arrive_time" column="arrive_time"></result>
+        <association property="stationCity" javaType="StationCity">
+            <id property="sid" column="sid"></id>
+            <result property="station" column="station"></result>
+            <result property="city" column="city"></result>
+        </association>
+    </resultMap>
+
+    <select id="selLineInfo" resultMap="lineMap">
+        select stop_id,
+               train_num,
+               depart_time,
+               arrive_time,
+               sid,
+               station,
+               city city
+
+        from (select * from info where train_num = #{param1}) a
+                 inner join sname_city on a.station_name = sname_city.sid order by a.stop_num_in_line;
+    </select>
+
+
+    <update id="UpdateInfoDe" >
+        update info set depart_time = #{param1}
+        where stop_id =
+              ((select stop_id from info where train_num = #{param3}
+                                           and stop_num_in_line = 1)+#{param2}-1);
+    </update>
+
+
+    <update id="UpdateTrDeTi" >
+        update train2 set depart_time = #{param2}
+        where train_name = #{param1};
+    </update>
+
+
+    <update id="UpdateTrArTi" >
+        update train2 set arrive_time = #{param2}
+        where train_name = #{param1};
+    </update>
+
+
+    <update id="UpdateInfoAr" >
+        update info set arrive_time = #{param1}
+        where stop_id =
+              ((select stop_id from info where train_num = #{param3}
+                                           and stop_num_in_line = 1)+#{param2}-1);
+    </update>
+
+    <update id="Updateth" >
+        update info set stop_num_in_line = stop_num_in_line + 1 where train_num = #{param1}
+        and stop_num_in_line >=#{param2} + 1;
+    </update>
+
+
+    <update id="Updateth2" >
+        update info set stop_num_in_line = stop_num_in_line - 1 where train_num = #{param1}
+                                                                  and stop_num_in_line >=#{param2} + 1;
+    </update>
+</mapper>

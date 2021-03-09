@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Passengerinterface">
+
+
+    <delete id="deletetrainByname">
+        delete from train where train_name = #{train_name};
+    </delete>
+
+    <resultMap id="ticketMap" type="Ticket">
+        <id column="ticket_id" property="ticket_id"></id>
+        <result column="seat_type" property="seat_type"></result>
+        <result column="go_time" property="go_time"></result>
+        <result column="ticket_entrance" property="ticket_entrance"></result>
+        <result column="seat_num" property="seat_num"></result>
+        <result column="existence" property="existence"></result>
+        <result column="money" property="money"></result>
+        <association property="depart_stop" javaType="Line">
+            <id property="stop_id" column="depart_stop_id"></id>
+        </association>
+        <association property="arrive_stop" javaType="Line">
+            <id property="stop_id" column="arrive_stop_id"></id>
+        </association>
+        <association property="passenger" javaType="Passenger">
+            <id property="user_name" column="user_name"></id>
+        </association>
+    </resultMap>
+
+    <select id="searchTrain" resultMap="ticketMap">
+        with b as (
+        select city, train_num, station_name, arrive_time, depart_time, stop_id
+        from (select * from sname_city where (city = #{param1}and existence = 'Y') or (city = #{param2}and existence =
+        'Y')) d
+        inner join info on d.sid = station_name),
+
+        q as (select distinct c.train_num train_num
+        from (select train_num, string_agg(city, ',') n from b group by train_num) c
+        where n like concat('%', #{param1}, '%', #{param2}, '%'))
+
+        select t.stop_id1 depart_stop_id, i.stop_id1 arrive_stop_id from ((
+        select stop_id stop_id1, b.train_num
+        from b
+        where train_num in (select * from q)
+        and (city = #{param1}))t inner join (select stop_id stop_id1, b.train_num
+        from b
+        where train_num in (select * from q)
+        and (city = #{param2}))i on t.train_num = i.train_num and t.stop_id1 &lt; i.stop_id1) order by (select
+        depart_time from info where stop_id = t.stop_id1);
+    </select>
+
+    <select id="queryRemain" resultType="Remain">
+        select min(ticket_rank1) ticket_rank1 ,min(ticket_rank2) ticket_rank2,min(ticket_rank3) ticket_rank3 from
+        remaining where (stop_id between #{param1} and #{param2}) and gotime = cast(#{param3} as date);
+    </select>
+
+    <select id="get_distance_by_station" resultType="Integer">
+        select (
+        (select miles from info where stop_id = #{param2}) - (select miles from info where stop_id = #{param1}));
+    </select>
+
+    <select id="get_price" resultType="Integer">
+        select get_price(#{param1},#{param2}, #{param3});
+    </select>
+
+    <resultMap id="lineMap" type="Line">
+        <id property="stop_id" column="stop_id"></id>
+        <result property="train_num" column="train_num"></result>
+        <result property="depart_time" column="depart_time"></result>
+        <result property="arrive_time" column="arrive_time"></result>
+        <result property="cost_days" column="cost_days"></result>
+        <association property="stationCity" javaType="StationCity">
+            <id property="sid" column="sid"></id>
+            <result property="station" column="station"></result>
+            <result property="city" column="city"></result>
+        </association>
+    </resultMap>
+
+    <select id="queryLineId" resultMap="lineMap">
+        select stop_id,
+        train_num,
+        depart_time,
+        arrive_time,
+        sid,
+        station,
+        city city,
+        cost_days
+        from (select * from info where stop_id = #{stop_id}) a
+        inner join sname_city on a.station_name = sname_city.sid;
+    </select>
+
+    <select id="get_train_info" resultMap="lineMap">
+        select * from (select * from info where train_num = #{train_num}) a
+        inner join sname_city on a.station_name = sname_city.sid order by stop_num_in_line;
+    </select>
+
+    <select id="checkUser" resultType="Passenger">
+        select user_id, user_name, user_password from user_table where user_name = #{param1} and user_password =
+        (select coded(#{param2}));
+    </select>
+
+    <update id="buyTicketUpdate">
+        update remaining -- 买票更新
+        <if test="seat_type == 1">
+            set ticket_rank1 = ticket_rank1 - 1
+        </if>
+        <if test="seat_type == 2">
+            set ticket_rank2 = ticket_rank2 - 1
+        </if>
+        <if test="seat_type == 3">
+            set ticket_rank3 = ticket_rank3 - 1
+        </if>
+        where gotime = cast(#{param4} as date) and
+        stop_id between
+        (select stop_id from info where train_num = #{param1} and station_name = (select sid from sname_city where
+        station = #{param2})) and
+        (select stop_id from info where train_num = #{param1} and station_name = (select sid from sname_city where
+        station = #{param3}));
+    </update>
+
+
+
+    <update id="update_seat_reserve">
+        update seat
+        set free = substr(free, 1, (select stop_num_in_line from info where stop_id = #{depart_stop.stop_id}) - 1) ||
+        repeat('1',
+        (select stop_num_in_line from info where stop_id = #{arrive_stop.stop_id}) -
+        (select stop_num_in_line from info where stop_id = #{depart_stop.stop_id})+1) ||
+        substr(free, (select stop_num_in_line from info where stop_id = #{arrive_stop.stop_id})+1)
+        where train_num = (select train_num from info where stop_id = #{depart_stop.stop_id})
+        and gotime = cast(#{go_time} as date)
+        and seat_num = (select seat_num from ticket_table where ticket_id = #{ticket_id});
+    </update>
+
+    <update id="update_seat_refund">
+        update seat
+        set free = substr(free, 1, (select stop_num_in_line from info where stop_id = #{depart_stop.stop_id}) - 1) ||
+        repeat('0',
+        (select stop_num_in_line from info where stop_id = #{arrive_stop.stop_id}) -
+        (select stop_num_in_line from info where stop_id = #{depart_stop.stop_id})+1) ||
+        substr(free, (select stop_num_in_line from info where stop_id = #{arrive_stop.stop_id})+1)
+        where train_num = (select train_num from info where stop_id = #{depart_stop.stop_id})
+        and gotime = cast(#{go_time} as date)
+        and seat_num = #{seat_num};
+    </update>
+
+    <insert id="insertTicket" useGeneratedKeys="true" keyProperty="ticket_id" keyColumn="ticket_id">
+        insert into ticket_table(existence,ticket_entrance, depart_stop_id, arrive_stop_id,seat_type, seat_num, go_time,
+        money, user_id)
+        values ('Y',mod(#{depart_stop.stop_id},15) ,#{depart_stop.stop_id} , #{arrive_stop.stop_id}, #{seat_type},
+        <if test="seat_type == 1">
+            (select seat_num
+            from seat
+            where gotime = cast(#{go_time} as date)
+            and substr(free, (select stop_num_in_line from info where stop_id =#{depart_stop.stop_id} ),(select
+            stop_num_in_line from info where stop_id = #{arrive_stop.stop_id}) - (select stop_num_in_line from info
+            where stop_id =#{depart_stop.stop_id} )) not like '%1%'
+            and substr(seat_num, 1, 1) = 'A'  and  train_num = (select train_num from info where stop_id =#{depart_stop.stop_id})  order by seat_num limit 1)
+        </if>
+        <if test="seat_type == 2">
+            (select seat_num
+            from seat
+            where gotime = cast(#{go_time} as date)
+            and substr(free, (select stop_num_in_line from info where stop_id =#{depart_stop.stop_id} ),(select
+            stop_num_in_line from info where stop_id = #{arrive_stop.stop_id}) - (select stop_num_in_line from info
+            where stop_id =#{depart_stop.stop_id} )) not like '%1%'
+            and substr(seat_num, 1, 1) = 'B'  and  train_num = (select train_num from info where stop_id =#{depart_stop.stop_id}) order by seat_num limit 1)
+        </if>
+        <if test="seat_type == 3">
+            (select seat_num
+            from seat
+            where gotime = cast(#{go_time} as date)
+            and substr(free, (select stop_num_in_line from info where stop_id =#{depart_stop.stop_id} ),(select
+            stop_num_in_line from info where stop_id = #{arrive_stop.stop_id}) - (select stop_num_in_line from info
+            where stop_id =#{depart_stop.stop_id} )) not like '%1%'
+            and substr(seat_num, 1, 1) = 'C' and  train_num = (select train_num from info where stop_id =#{depart_stop.stop_id})  order by seat_num limit 1)
+        </if>
+        ,cast(#{go_time} as date) , get_price( ((select
+        miles from info where stop_id = #{arrive_stop.stop_id}) - (select miles from info where stop_id =
+        #{depart_stop.stop_id})), (select train_num from info where stop_id = #{arrive_stop.stop_id}),
+        #{seat_type}), #{passenger.user_id});
+    </insert>
+
+    <select id="getUserId" resultType="Integer">
+        select user_id from user_table where user_name = #{user_name};
+    </select>
+
+
+    <insert id="generateOrder" useGeneratedKeys="true" keyColumn="order_id" keyProperty="order_id">
+        insert into order_table( user_id,ticket_id,existence)
+        values (#{passenger.user_id}, #{ticket.ticket_id},'Y');
+    </insert>
+
+
+    <select id="getStopId" resultType="Integer">
+        select stop_id from info where train_num = #{param1} and station_name = (select sid from sname_city where
+        station = #{param2});
+    </select>
+
+    <select id="user_existence" resultType="Passenger">
+        select * from user_table where user_id = #{param1} or user_name = #{param2};
+    </select>
+
+    <insert id="register" useGeneratedKeys="true" keyColumn="user_id" keyProperty="user_id">
+        insert into user_table(user_name, user_password) values (#{user_name}, (select coded(#{user_password})));
+    </insert>
+
+
+    <resultMap id="orderMap" type="Order">
+        <id column="order_id" property="order_id"></id>
+        <result column="existence" property="existence"></result>
+        <association property="passenger" javaType="Passenger">
+            <id column="user_id" property="user_id"></id>
+            <result column="user_name" property="user_name"></result>
+        </association>
+        <association property="ticket" javaType="Ticket">
+            <id column="ticket_id" property="ticket_id"></id>
+            <result column="seat_type" property="seat_type"></result>
+            <result column="seat_num" property="seat_num"></result>
+        </association>
+    </resultMap>
+
+    <select id="queryOrderId" resultMap="orderMap">
+        select a.order_id order_id, a.existence existence,
+        user_table.user_id user_id,
+        user_table.user_name user_name,
+        ticket_table.ticket_id,
+        ticket_table.seat_type,
+        ticket_table.seat_num
+        from ((select * from order_table where order_id = #{order_id}) a inner join ticket_table on a.ticket_id =
+        ticket_table.ticket_id)
+        inner join user_table on a.user_id = user_table.user_id;
+    </select>
+
+    <select id="get_everyOrder" resultMap="orderMap">
+        select order_id from order_table where user_id = #{user_id};
+    </select>
+
+
+    <select id="queryTicketId" resultMap="ticketMap">
+        with c as (select *
+        from info
+        inner join (select * from ticket_table where ticket_id = #{ticket_id}) a on info.stop_id = a.arrive_stop_id),
+        d as (select *
+        from info
+        inner join (select * from ticket_table where ticket_id = #{ticket_id}) b on info.stop_id = b.depart_stop_id)
+        select c.ticket_id,c.seat_type,cast(c.go_time as varchar) go_time, c.ticket_entrance,
+        c.seat_num,c.existence,c.money,
+        c.arrive_stop_id,
+        d.depart_stop_id,
+        (select user_name from user_table where user_id = c.user_id)
+        from c
+        inner join d on true;
+    </select>
+
+
+    <update id="refundTicket">
+        update remaining
+        set
+        <if test="seat_type==1">
+            ticket_rank1 = ticket_rank1 + 1
+        </if>
+        <if test="seat_type == 2">
+            ticket_rank2 = ticket_rank2 + 1
+        </if>
+        <if test="seat_type == 3">
+            ticket_rank3 = ticket_rank3 + 1
+        </if>
+        where (stop_id between #{param2} and #{param3}) and gotime = cast(#{param4} as date);
+    </update>
+
+    <update id="deleteOrder">
+        update order_table set existence = 'N' where order_id = #{order_id};
+    </update>
+
+    <update id="deleteTicket">
+        update ticket_table set existence = 'N' where ticket_id = #{ticket_id};
+    </update>
+
+
+    <select id="focal_point" resultType="StationCity">
+        with b as (select train_num, min(stop_num_in_line) stop_num_in_line
+        from (select * from sname_city where city = #{param1}) a
+        inner join info on sid = station_name
+        group by train_num),
+
+        d as (select m.train_num,
+        stop_num_in_line --找到这些站的后续站
+        from info
+        inner join
+        (select max(info.stop_num_in_line) t, b.train_num
+        from info
+        inner join b on info.train_num = b.train_num
+        group by b.train_num) m on info.train_num = m.train_num and info.stop_num_in_line = m.t ),
+
+        h as (select train_num, max(stop_num_in_line) stop_num_in_line
+        from (select * from sname_city where city = #{param2}) g
+        inner join info on sid = station_name
+        group by train_num),
+
+        f as (select m.train_num,
+        stop_num_in_line --找到这些站的前续站
+        from info
+        inner join
+        (select min(info.stop_num_in_line) t, h.train_num
+        from info
+        inner join h on info.train_num = h.train_num
+        group by h.train_num) m on info.train_num = m.train_num and info.stop_num_in_line = m.t)
+
+
+        select distinct city
+        from (sname_city
+        inner join
+        (select *
+        from (select distinct station_name
+        from (select info.train_num,
+        info.stop_num_in_line,
+        b.stop_num_in_line as start,
+        info.station_name,
+        info.arrive_time,
+        info.depart_time
+        from (info
+        inner join b on info.train_num = b.train_num)) t
+        inner join d on d.train_num = t.train_num
+        where t.stop_num_in_line between start and d.stop_num_in_line) h
+        intersect
+
+
+        (select distinct station_name
+        from (select info.train_num,
+        info.stop_num_in_line,
+        h.stop_num_in_line as ends,
+        info.station_name,
+        info.arrive_time,
+        info.depart_time
+        from (info
+        inner join h on info.train_num = h.train_num)) t
+        inner join f on f.train_num = t.train_num
+        where t.stop_num_in_line between f.stop_num_in_line and ends)) q on q.station_name = sname_city.sid) f;
+    </select>
+
+    <select id="get_distance" resultType="Integer">
+        with b as (
+        select city, train_num, station_name, arrive_time, depart_time, stop_id, miles
+        from (select * from sname_city where (city = #{param1}) or (city = #{param2})) d
+        inner join info on d.sid = station_name),
+
+
+        v as (
+        select distinct (train_num)
+        from (
+        select train_num
+        from b
+        where train_num in
+        (select distinct c.train_num
+        from (select train_num, string_agg(city, ',') n from b group by train_num) c
+        where n like concat('%', #{param1}, '%', #{param2}, '%'))
+        and (city = #{param1} or city = #{param2})
+        order by train_num, stop_id) q
+        limit 1)
+
+        select abs(
+        (select miles from b where train_num = (select * from v) and city = #{param1} limit 1) -
+        (select miles from b where train_num = (select * from v) and city = #{param2} limit 1))
+        ;
+
+    </select>
+
+
+</mapper>
